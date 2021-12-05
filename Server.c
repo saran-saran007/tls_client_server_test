@@ -10,6 +10,8 @@
 #include "openssl/ssl.h"
 #include "openssl/err.h"
 #define FAIL    -1
+
+int tcp_client_connect(int rport);
 // Create the SSL socket and intialize the socket address structure
 int OpenListener(int port)
 {
@@ -49,7 +51,7 @@ SSL_CTX* InitServerCTX(void)
     SSL_CTX *ctx;
     OpenSSL_add_all_algorithms();  /* load & register all cryptos, etc. */
     SSL_load_error_strings();   /* load all error messages */
-    method = TLSv1_2_server_method();  /* create new server-method instance */
+    method = (SSL_METHOD*)TLSv1_2_server_method();  /* create new server-method instance */
     ctx = SSL_CTX_new(method);   /* create new context from method */
     if ( ctx == NULL )
     {
@@ -100,69 +102,99 @@ void ShowCerts(SSL* ssl)
     else
         printf("No certificates.\n");
 }
-void Servlet(SSL* ssl) /* Serve the connection -- threadable */
+void proxyTraffic(SSL* ssl, int toPort) /* Serve the connection -- threadable */
 {
     char buf[1024] = {0};
-    int sd, bytes;
-    const char* ServerResponse="<\Body>\
-                               <Name>aticleworld.com</Name>\
-                 <year>1.5</year>\
-                 <BlogType>Embedede and c\c++<\BlogType>\
-                 <Author>amlendra<Author>\
-                 <\Body>";
-    const char *cpValidMessage = "<Body>\
-                               <UserName>aticle<UserName>\
-                 <Password>123<Password>\
-                 <\Body>";
+    int sd, bytes, tcpsock;
+
     if ( SSL_accept(ssl) == FAIL )     /* do SSL-protocol accept */
         ERR_print_errors_fp(stderr);
     else
     {
         ShowCerts(ssl);        /* get any certificates */
-        bytes = SSL_read(ssl, buf, sizeof(buf)); /* get request */
-        buf[bytes] = '\0';
-        printf("Client msg: \"%s\"\n", buf);
-        if ( bytes > 0 )
-        {
-#if 0
-            if(strcmp(cpValidMessage,buf) == 0)
-            {
-                SSL_write(ssl, ServerResponse, strlen(ServerResponse)); /* send reply */
-            }
-            else
-            {
-                SSL_write(ssl, "Invalid Message", strlen("Invalid Message")); /* send reply */
-            }
-#endif
+        tcpsock = tcp_client_connect(toPort);
+        if (tcpsock == FAIL) {
+		printf("### proxy connection to tcp server failed ####\n");
+		return;
         }
-        else
-        {
-            ERR_print_errors_fp(stderr);
-        }
+	while (1) {
+		memset(buf, 0x0, sizeof(buf));
+		bytes = 0;
+		bytes = SSL_read(ssl, buf, sizeof(buf)); /* get request */
+		buf[bytes] = '\0';
+		printf("Client msg: \"%s\"\n", buf);
+		if ( bytes > 0 )
+		{
+			write(tcpsock, buf, sizeof(buf));
+			printf("Patched decrypted traffic to tcp server\n");
+		}
+		else
+		{
+			ERR_print_errors_fp(stderr);
+			sd = SSL_get_fd(ssl);       /* get socket connection */
+			SSL_free(ssl);         /* release SSL state */
+			close(sd);          /* close connection */
+		}
+	}
     }
     sd = SSL_get_fd(ssl);       /* get socket connection */
     SSL_free(ssl);         /* release SSL state */
     close(sd);          /* close connection */
 }
+
+int tcp_client_connect(int rport)
+{
+	int sockfd;
+	struct sockaddr_in servaddr;
+
+	// socket create and varification
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sockfd == -1) {
+		printf("socket creation failed...\n");
+		exit(0);
+	}
+	else
+		printf("Socket successfully created..\n");
+	bzero(&servaddr, sizeof(servaddr));
+
+	// assign IP, PORT
+	servaddr.sin_family = AF_INET;
+	servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+	servaddr.sin_port = htons(rport);
+
+	// connect the client socket to server socket
+	if (connect(sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) != 0) {
+		printf("connection with the server failed...\n");
+		exit(0);
+	}
+	else
+		printf("connected to the server..\n");
+
+        return sockfd;
+	// close the socket
+	// close(sockfd);
+}
+
 int main(int count, char *Argc[])
 {
     SSL_CTX *ctx;
     int server;
-    char *portnum;
+    char *portnum, *rport;
 //Only root user have the permsion to run the server
     if(!isRoot())
     {
         printf("This program must be run as root/sudo user!!");
         exit(0);
     }
-    if ( count != 2 )
+    if ( count < 2 )
     {
-        printf("Usage: %s <portnum>\n", Argc[0]);
+        printf("Usage: %s <portnum> <redirect-port>\n", Argc[0]);
         exit(0);
     }
     // Initialize the SSL library
     SSL_library_init();
     portnum = Argc[1];
+    rport = Argc[2];
     ctx = InitServerCTX();        /* initialize SSL */
     LoadCertificates(ctx, "mycert.pem", "mycert.pem"); /* load certs */
     server = OpenListener(atoi(portnum));    /* create server socket */
@@ -175,7 +207,7 @@ int main(int count, char *Argc[])
         printf("Connection: %s:%d\n",inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
         ssl = SSL_new(ctx);              /* get new SSL state with context */
         SSL_set_fd(ssl, client);      /* set connection socket to SSL state */
-        Servlet(ssl);         /* service connection */
+        proxyTraffic(ssl, atoi(rport));         /* patch the traffic to tcp port */
     }
     close(server);          /* close server socket */
     SSL_CTX_free(ctx);         /* release context */
