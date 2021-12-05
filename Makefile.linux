@@ -1,0 +1,5 @@
+all: client server
+client: Client.c
+	gcc -Wall -o client Client.c -L/usr/lib -lssl -lcrypto
+server: Server.c
+	gcc -Wall -o server Server.c -L/usr/lib -lssl -lcrypto

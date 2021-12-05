@@ -3,3 +3,9 @@ Sample test program to expierient with openssl library for running tls client an
 
 Both Server and client load a certificates into the ssl ctx . 
 When server requests clients certificate, the client certificate will be used automatically.
+
+#Installation
+For Mac-os:-
+make -f Makefile.mac all
+For Linux:-
+make -f Makefile.linux all
