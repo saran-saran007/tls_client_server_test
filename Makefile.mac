@@ -3,3 +3,13 @@ client: Client.c
 	gcc -Wall -o client Client.c -L/usr/local/opt/openssl/lib -I/usr/local/opt/openssl/include -lssl -lcrypto
 server: Server.c
 	gcc -Wall -o server Server.c -L/usr/local/opt/openssl/lib -I/usr/local/opt/openssl/include -lssl -lcrypto
+
+openssl:
+	./install_openssl_with_debug.sh
+
+CFLAGS = -D DEBUG
+debug: client_dbg server_dbg
+client_dbg: Client.c
+	gcc $(CFLAGS) -Wall -o client Client.c -L/usr/local/ssl/lib -I/usr/local/ssl/include -lssl -lcrypto
+server_dbg: Server.c
+	gcc $(CFLAGS) -Wall -o server Server.c -L/usr/local/ssl/lib -I/usr/local/ssl/include -lssl -lcrypto

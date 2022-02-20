@@ -9,6 +9,10 @@
 #include <resolv.h>
 #include "openssl/ssl.h"
 #include "openssl/err.h"
+#ifdef DEBUG
+#include <openssl/trace.h>
+#endif
+
 #define FAIL    -1
 
 int tcp_client_connect(int rport);
@@ -115,25 +119,30 @@ void proxyTraffic(SSL* ssl, int toPort) /* Serve the connection -- threadable */
         tcpsock = tcp_client_connect(toPort);
         if (tcpsock == FAIL) {
 		printf("### proxy connection to tcp server failed ####\n");
-		return;
         }
 	while (1) {
 		memset(buf, 0x0, sizeof(buf));
 		bytes = 0;
 		bytes = SSL_read(ssl, buf, sizeof(buf)); /* get request */
 		buf[bytes] = '\0';
-		printf("Client msg: \"%s\"\n", buf);
-		if ( bytes > 0 )
+		if (bytes > 0)
 		{
-			write(tcpsock, buf, sizeof(buf));
-			printf("Patched decrypted traffic to tcp server\n");
+			printf("Client msg: \"%s\"\n", buf);
 		}
-		else
+		if (tcpsock != FAIL)
 		{
-			ERR_print_errors_fp(stderr);
-			sd = SSL_get_fd(ssl);       /* get socket connection */
-			SSL_free(ssl);         /* release SSL state */
-			close(sd);          /* close connection */
+			if ( bytes > 0 )
+			{
+				write(tcpsock, buf, sizeof(buf));
+				printf("Patched decrypted traffic to tcp server\n");
+			}
+			else
+			{
+				ERR_print_errors_fp(stderr);
+				sd = SSL_get_fd(ssl);       /* get socket connection */
+				SSL_free(ssl);         /* release SSL state */
+				close(sd);          /* close connection */
+			}
 		}
 	}
     }
@@ -164,8 +173,9 @@ int tcp_client_connect(int rport)
 
 	// connect the client socket to server socket
 	if (connect(sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) != 0) {
-		printf("connection with the server failed...\n");
-		exit(0);
+		printf("connection with TCP server failed...\n");
+		// exit(0);
+                return -1;
 	}
 	else
 		printf("connected to the server..\n");
@@ -196,7 +206,7 @@ int main(int count, char *Argc[])
     portnum = Argc[1];
     rport = Argc[2];
     ctx = InitServerCTX();        /* initialize SSL */
-    LoadCertificates(ctx, "mycert.pem", "mycert.pem"); /* load certs */
+    LoadCertificates(ctx, "server_cert_key.pem", "server_cert_key.pem"); /* load certs */
     server = OpenListener(atoi(portnum));    /* create server socket */
     while (1)
     {
@@ -207,6 +217,10 @@ int main(int count, char *Argc[])
         printf("Connection: %s:%d\n",inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
         ssl = SSL_new(ctx);              /* get new SSL state with context */
         SSL_set_fd(ssl, client);      /* set connection socket to SSL state */
+#ifdef DEBUG
+	SSL_set_msg_callback(ssl, SSL_trace);
+	SSL_set_msg_callback_arg(ssl,BIO_new_fp(stdout,0));
+#endif
         proxyTraffic(ssl, atoi(rport));         /* patch the traffic to tcp port */
     }
     close(server);          /* close server socket */
