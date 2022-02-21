@@ -10,6 +10,6 @@ openssl:
 CFLAGS = -D DEBUG
 debug: client_dbg server_dbg
 client_dbg: Client.c
-	gcc $(CFLAGS) -Wall -o client Client.c -L/usr/local/ssl/lib -I/usr/local/ssl/include -lssl -lcrypto
+	gcc -g $(CFLAGS) -Wall -o client Client.c -L/usr/local/ssl/lib -I/usr/local/ssl/include -lssl -lcrypto
 server_dbg: Server.c
-	gcc $(CFLAGS) -Wall -o server Server.c -L/usr/local/ssl/lib -I/usr/local/ssl/include -lssl -lcrypto
+	gcc -g $(CFLAGS) -Wall -o server Server.c -L/usr/local/ssl/lib -I/usr/local/ssl/include -lssl -lcrypto
